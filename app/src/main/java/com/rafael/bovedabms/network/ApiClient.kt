@@ -1,6 +1,7 @@
 package com.rafael.bovedabms.network
 
 import com.rafael.bovedabms.models.CredencialPersonal
+import com.rafael.bovedabms.models.CredencialPersonalCreate
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -40,6 +41,8 @@ interface ApiService {
     suspend fun getCredencialesPersonales(
         @Path("usuario_id") usuarioId: Int
     ): List<CredencialPersonal>
+    @POST("personales/")
+    suspend fun crearCredencialPersonal(@Body credencial: CredencialPersonalCreate): Map<String, String>
 }
 
 // Token de sesión: vive SOLO en memoria (no se guarda en disco). Al cerrar la app se pierde.
@@ -47,18 +50,22 @@ object Sesion {
     @Volatile
     var token: String? = null
 
+    @Volatile
+    var usuarioActual: Usuario? = null
+
     fun cerrar() {
         token = null
+        usuarioActual = null
     }
 
-    // Inicia sesión en la API y guarda el token. Úsalo también cuando entres por huella/PIN,
-    // porque en ese caso hay que pedir un token nuevo con el correo y la contraseña personal guardados.
+    // Inicia sesión en la API y guarda el token y el usuario logueado.
     suspend fun iniciar(email: String, passwordPersonal: String): Usuario {
         cerrar()
         val respuesta = ApiClient.retrofitService.login(
             LoginRequest(email = email, password_personal = passwordPersonal)
         )
         token = respuesta.token
+        usuarioActual = respuesta
         return respuesta
     }
 }

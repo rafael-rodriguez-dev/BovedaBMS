@@ -20,6 +20,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.rafael.bovedabms.network.Sesion
 import javax.crypto.spec.SecretKeySpec
 
 @Composable
@@ -29,25 +30,38 @@ fun BovedaScreen(
     viewModel: BovedaViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    var showDialog by remember { mutableStateOf(false) }
+    var showDialogBMS by remember { mutableStateOf(false) }
+    var showDialogPersonal by remember { mutableStateOf(false) }
     var equipoEditando by remember { mutableStateOf<EquipoUiModel?>(null) }
 
     var tabSeleccionada by remember { mutableStateOf(0) }
     val titulosTabs = listOf("Infraestructura BMS", "Mis Claves Personales")
 
-    LaunchedEffect(Unit) {
+    // Obtenemos dinámicamente el ID del usuario que inició sesión en Sesion
+    val idUsuarioLogueado = Sesion.usuarioActual?.id ?: 3
+
+    LaunchedEffect(idUsuarioLogueado) {
         viewModel.cargarEquipos(llaveMaestra, context)
-        val idUsuarioLogueado = 3 // Extraer de la sesión en el futuro
         viewModel.cargarClavesPersonales(idUsuarioLogueado, llavePersonal)
     }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                equipoEditando = null
-                showDialog = true
-            }, containerColor = MaterialTheme.colorScheme.primary) {
-                Icon(Icons.Default.Add, contentDescription = "Agregar Equipo")
+            FloatingActionButton(
+                onClick = {
+                    if (tabSeleccionada == 0) {
+                        equipoEditando = null
+                        showDialogBMS = true
+                    } else {
+                        showDialogPersonal = true
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.primary
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = if (tabSeleccionada == 0) "Agregar Equipo BMS" else "Agregar Clave Personal"
+                )
             }
         }
     ) { paddingValues ->
@@ -92,7 +106,7 @@ fun BovedaScreen(
                         items(equiposFiltrados) { equipo ->
                             EquipoCard(equipo) {
                                 equipoEditando = equipo
-                                showDialog = true
+                                showDialogBMS = true
                             }
                         }
                     }
@@ -112,7 +126,8 @@ fun BovedaScreen(
         }
     }
 
-    if (showDialog) {
+    // DIÁLOGO 1: CREAR O EDITAR EQUIPO BMS
+    if (showDialogBMS) {
         var nombre by remember { mutableStateOf(equipoEditando?.nombre ?: "") }
         var sitio by remember { mutableStateOf(equipoEditando?.sitio ?: "") }
         var tipo by remember { mutableStateOf(equipoEditando?.tipo ?: "Servidor") }
@@ -121,7 +136,7 @@ fun BovedaScreen(
         var clave by remember { mutableStateOf("") }
 
         AlertDialog(
-            onDismissRequest = { showDialog = false },
+            onDismissRequest = { showDialogBMS = false },
             title = { Text(if (equipoEditando == null) "Nuevo Equipo BMS" else "Actualizar Contraseña") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -143,19 +158,62 @@ fun BovedaScreen(
             },
             confirmButton = {
                 Button(onClick = {
-                    val idUsuarioLogueado = 3
-
                     viewModel.guardarOActualizarEquipo(
                         id = equipoEditando?.id, nombre = nombre, sitio = sitio, tipo = tipo,
                         ip = ip, usuario = usuario, passPlana = clave,
                         llaveMaestra = llaveMaestra, context = context,
                         usuarioId = idUsuarioLogueado
                     )
-                    showDialog = false
+                    showDialogBMS = false
                 }) { Text("Guardar cambios") }
             },
             dismissButton = {
-                TextButton(onClick = { showDialog = false }) { Text("Cancelar") }
+                TextButton(onClick = { showDialogBMS = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    // DIÁLOGO 2: CREAR NUEVA CREDENCIAL PERSONAL
+    if (showDialogPersonal) {
+        var categoria by remember { mutableStateOf("") }
+        var titulo by remember { mutableStateOf("") }
+        var urlServicio by remember { mutableStateOf("") }
+        var usuario by remember { mutableStateOf("") }
+        var clave by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showDialogPersonal = false },
+            title = { Text("Nueva Credencial Personal") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    OutlinedTextField(value = categoria, onValueChange = { categoria = it }, label = { Text("Categoría (Ej. Correos, Bancos, VPN)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = titulo, onValueChange = { titulo = it }, label = { Text("Título (Ej. Gmail Personal)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = urlServicio, onValueChange = { urlServicio = it }, label = { Text("URL / Sistema (Opcional)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = usuario, onValueChange = { usuario = it }, label = { Text("Usuario (Opcional)") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = clave, onValueChange = { clave = it }, label = { Text("Contraseña Personal") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (titulo.isBlank() || clave.isBlank()) {
+                        Toast.makeText(context, "El título y la contraseña son obligatorios", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    viewModel.guardarCredencialPersonal(
+                        titulo = titulo,
+                        categoria = categoria,
+                        urlServicio = urlServicio,
+                        usuario = usuario,
+                        passPlana = clave,
+                        llavePersonal = llavePersonal,
+                        usuarioId = idUsuarioLogueado
+                    )
+                    showDialogPersonal = false
+                }) { Text("Guardar Secreto") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialogPersonal = false }) { Text("Cancelar") }
             }
         )
     }

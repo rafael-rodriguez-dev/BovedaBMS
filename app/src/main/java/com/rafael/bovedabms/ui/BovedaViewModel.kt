@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.rafael.bovedabms.crypto.CryptoManager
 import com.rafael.bovedabms.database.BovedaDatabase
 import com.rafael.bovedabms.database.EquipoEntity
+import com.rafael.bovedabms.models.CredencialPersonalCreate
 import com.rafael.bovedabms.network.ApiClient
 import kotlinx.coroutines.launch
 import javax.crypto.spec.SecretKeySpec
@@ -96,7 +97,7 @@ class BovedaViewModel : ViewModel() {
         }
     }
 
-    // AQUI ESTÁ LA CORRECCIÓN: Usamos llavePersonal en lugar de la maestra
+    // Desciframos usando exclusivamente la llave personal
     fun cargarClavesPersonales(usuarioId: Int, llavePersonal: SecretKeySpec) {
         viewModelScope.launch {
             try {
@@ -104,7 +105,6 @@ class BovedaViewModel : ViewModel() {
 
                 val listaDescifrada = mutableListOf<ClavePersonalUiModel>()
                 for (clave in clavesCifradas) {
-                    // Desciframos usando exclusivamente la llave personal
                     val passRevelada = CryptoManager.descifrarTexto(clave.password_cifrada, clave.iv_cifrado, llavePersonal)
                     listaDescifrada.add(
                         ClavePersonalUiModel(
@@ -191,6 +191,48 @@ class BovedaViewModel : ViewModel() {
                     errorMessage.value = "Rechazado: $errorDelServidor"
                 } else {
                     errorMessage.value = "Fallo de red: ${e.message}"
+                }
+            } finally {
+                isLoading.value = false
+            }
+        }
+    }
+
+    // NUEVA FUNCIÓN: Guarda en la tabla equipos_personales usando llavePersonal
+    fun guardarCredencialPersonal(
+        titulo: String,
+        categoria: String,
+        urlServicio: String,
+        usuario: String,
+        passPlana: String,
+        llavePersonal: SecretKeySpec,
+        usuarioId: Int
+    ) {
+        viewModelScope.launch {
+            try {
+                isLoading.value = true
+                val (passCifrada, ivCifrado) = CryptoManager.cifrarTexto(passPlana, llavePersonal)
+
+                val nuevaCredencial = CredencialPersonalCreate(
+                    usuario_id = usuarioId,
+                    titulo = titulo,
+                    categoria = categoria.ifBlank { "General" },
+                    url_servicio = urlServicio,
+                    usuario_acceso = usuario,
+                    password_cifrada = passCifrada,
+                    iv_cifrado = ivCifrado
+                )
+
+                ApiClient.retrofitService.crearCredencialPersonal(nuevaCredencial)
+                cargarClavesPersonales(usuarioId, llavePersonal)
+            } catch (e: Exception) {
+                if (esSesionExpirada(e)) {
+                    errorMessage.value = "Tu sesión expiró. Cierra sesión y vuelve a entrar. No se guardó el cambio."
+                } else if (e is retrofit2.HttpException) {
+                    val errorDelServidor = e.response()?.errorBody()?.string()
+                    errorMessage.value = "Rechazado: $errorDelServidor"
+                } else {
+                    errorMessage.value = "Fallo al guardar clave personal: ${e.message}"
                 }
             } finally {
                 isLoading.value = false
